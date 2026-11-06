@@ -494,12 +494,17 @@ def default_qt_profile() -> QWebEngineProfile:
 
     try:
         from qutebrowser.qt.webenginecore import QWebEngineProfileBuilder
+        builder = QWebEngineProfileBuilder()
     except ImportError:
         # Added in QtWebEngine 6.9
         return QWebEngineProfile("Default")
+    except TypeError:
+        # PyQt6-WebEngine 6.11 binds the builder without its constructor.
+        log.init.debug("QWebEngineProfileBuilder can't be constructed, "
+                       "WebExtensions might crash when enabled")
+        return QWebEngineProfile("Default")
 
     cache_path, storage_path = _default_profile_paths()
-    builder = QWebEngineProfileBuilder()
     builder.setCachePath(cache_path)
     builder.setPersistentStoragePath(storage_path)
     return builder.createProfile("Default")
