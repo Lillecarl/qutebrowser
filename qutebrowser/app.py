@@ -518,6 +518,21 @@ def _init_modules(*, args):
     nativeeventfilter.init()
 
 
+def _is_launch_argument(url: QUrl) -> bool:
+    """Check whether a macOS FileOpen event names an argument of this process.
+
+    At launch, Cocoa sends every non-option argument of the process as a
+    FileOpen event. Qt drops the ones in QApplication.arguments(), but
+    qt_args() gives Qt a trimmed argv. Without this check, a URL given on the
+    command line opens a second time as a local file, and so does the script
+    path when Python runs qutebrowser as a script (as Nix does).
+    """
+    if not url.isLocalFile():
+        return False
+    path = url.toLocalFile()
+    return any(os.path.abspath(arg) == path for arg in sys.orig_argv)
+
+
 class Application(QApplication):
 
     """Main application instance.
@@ -580,7 +595,10 @@ class Application(QApplication):
             return super().event(e)
 
         url = e.url()
-        if url.isValid():
+        if _is_launch_argument(url):
+            log.init.debug("Ignoring FileOpen for launch argument: {}".format(
+                url.toDisplayString()))
+        elif url.isValid():
             open_url(url, no_raise=True)
         else:
             message.error("Invalid URL: {}".format(url.errorString()))
