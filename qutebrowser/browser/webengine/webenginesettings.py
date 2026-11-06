@@ -475,17 +475,42 @@ def _clear_webengine_permissions_json():
         )
 
 
+def _default_profile_paths() -> tuple[str, str]:
+    """Get the cache and persistent storage paths of the default profile."""
+    return (os.path.join(standarddir.cache(), 'webengine'),
+            os.path.join(standarddir.data(), 'webengine'))
+
+
 def default_qt_profile() -> QWebEngineProfile:
-    """Get the default profile from Qt."""
-    if machinery.IS_QT6:
-        return QWebEngineProfile("Default")
-    else:
+    """Get the default profile from Qt.
+
+    With QtWebEngine 6.9+, the profile gets its storage paths as it is
+    created, via QWebEngineProfileBuilder. A profile whose persistent storage
+    path is set after creation segfaults in setExtensionEnabled() (seen with
+    QtWebEngine 6.11.2), so WebExtensions can't be enabled in it.
+    """
+    if machinery.IS_QT5:
         return QWebEngineProfile.defaultProfile()
+
+    try:
+        from qutebrowser.qt.webenginecore import QWebEngineProfileBuilder
+    except ImportError:
+        # Added in QtWebEngine 6.9
+        return QWebEngineProfile("Default")
+
+    cache_path, storage_path = _default_profile_paths()
+    builder = QWebEngineProfileBuilder()
+    builder.setCachePath(cache_path)
+    builder.setPersistentStoragePath(storage_path)
+    return builder.createProfile("Default")
 
 
 def _init_default_profile():
     """Init the default QWebEngineProfile."""
     global default_profile
+    # Qt loads the permissions file as soon as the storage path is set,
+    # which might be while creating the profile.
+    _clear_webengine_permissions_json()
     default_profile = default_qt_profile()
     assert not default_profile.isOffTheRecord()
 
@@ -512,11 +537,11 @@ def _init_default_profile():
             f"  Early version: {non_ua_version}\n"
             f"  Real version:  {ua_version}")
 
-    _clear_webengine_permissions_json()
-    default_profile.setCachePath(
-        os.path.join(standarddir.cache(), 'webengine'))
-    default_profile.setPersistentStoragePath(
-        os.path.join(standarddir.data(), 'webengine'))
+    cache_path, storage_path = _default_profile_paths()
+    if default_profile.cachePath() != cache_path:
+        default_profile.setCachePath(cache_path)
+    if default_profile.persistentStoragePath() != storage_path:
+        default_profile.setPersistentStoragePath(storage_path)
 
     _init_profile(default_profile)
 
