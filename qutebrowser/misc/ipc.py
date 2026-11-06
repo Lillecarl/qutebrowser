@@ -25,6 +25,8 @@ WRITE_TIMEOUT = 1000
 READ_TIMEOUT = 5000
 ATIME_INTERVAL = 5000 * 60  # 5 minutes
 PROTOCOL_VERSION = 1
+# The size of sockaddr_un.sun_path, less its terminating NUL.
+SOCKET_PATH_MAX = 103 if utils.is_mac else 107
 
 
 # The ipc server instance
@@ -66,7 +68,13 @@ def _get_socketname(basedir):
 
     prefix = 'i-' if utils.is_mac else 'ipc-'
     filename = '{}{}'.format(prefix, md5)
-    return os.path.join(standarddir.runtime(), filename)
+    path = os.path.join(standarddir.runtime(), filename)
+    if basedir is not None and len(os.fsencode(path)) > SOCKET_PATH_MAX:
+        # With a long --basedir, <basedir>/runtime is too long for a socket.
+        # The hash covers the basedir, so the shared runtime directory still
+        # keeps instances with different basedirs apart.
+        path = os.path.join(standarddir.default_runtime(), filename)
+    return path
 
 
 class Error(Exception):

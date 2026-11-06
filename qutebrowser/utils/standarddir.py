@@ -191,53 +191,69 @@ def download() -> str:
     return _locations[_Location.download]
 
 
-def _init_runtime(args: Optional[argparse.Namespace]) -> None:
-    """Initialize location for runtime data."""
+def _runtime_type() -> QStandardPaths.StandardLocation:
+    """Get the QStandardPaths location used for runtime data."""
     if utils.is_mac or utils.is_windows:
         # RuntimeLocation is a weird path on macOS and Windows.
-        typ = QStandardPaths.StandardLocation.TempLocation
-    else:
-        typ = QStandardPaths.StandardLocation.RuntimeLocation
+        return QStandardPaths.StandardLocation.TempLocation
+    return QStandardPaths.StandardLocation.RuntimeLocation
 
-    path = _from_args(typ, args)
+
+def _default_runtime() -> str:
+    """Get the runtime location used without a --basedir."""
+    typ = _runtime_type()
+    try:
+        path = _writable_location(typ)
+    except EmptyValueError:
+        # Fall back to TempLocation when RuntimeLocation is misconfigured
+        if typ == QStandardPaths.StandardLocation.TempLocation:
+            raise
+        path = _writable_location(  # pragma: no cover
+            QStandardPaths.StandardLocation.TempLocation)
+
+    # This is generic, but per-user.
+    # _writable_location makes sure we have a qutebrowser-specific subdir.
+    #
+    # For TempLocation:
+    # "The returned value might be application-specific, shared among
+    # other applications for this user, or even system-wide."
+    #
+    # Unfortunately this path could get too long for sockets (which have a
+    # maximum length of 104 chars), so we don't add the username here...
+
+    if version.is_flatpak():
+        # We need a path like
+        # /run/user/1000/app/org.qutebrowser.qutebrowser rather than
+        # /run/user/1000/qutebrowser on Flatpak, since that's bind-mounted
+        # in a way that it is accessible by any other qutebrowser
+        # instances.
+        *parts, app_name = os.path.split(path)
+        assert app_name == APPNAME, app_name
+        flatpak_id = version.flatpak_id()
+        assert flatpak_id is not None
+        path = os.path.join(*parts, 'app', flatpak_id)
+
+    return path
+
+
+def _init_runtime(args: Optional[argparse.Namespace]) -> None:
+    """Initialize location for runtime data."""
+    path = _from_args(_runtime_type(), args)
     if path is None:
-        try:
-            path = _writable_location(typ)
-        except EmptyValueError:
-            # Fall back to TempLocation when RuntimeLocation is misconfigured
-            if typ == QStandardPaths.StandardLocation.TempLocation:
-                raise
-            path = _writable_location(  # pragma: no cover
-                QStandardPaths.StandardLocation.TempLocation)
-
-        # This is generic, but per-user.
-        # _writable_location makes sure we have a qutebrowser-specific subdir.
-        #
-        # For TempLocation:
-        # "The returned value might be application-specific, shared among
-        # other applications for this user, or even system-wide."
-        #
-        # Unfortunately this path could get too long for sockets (which have a
-        # maximum length of 104 chars), so we don't add the username here...
-
-        if version.is_flatpak():
-            # We need a path like
-            # /run/user/1000/app/org.qutebrowser.qutebrowser rather than
-            # /run/user/1000/qutebrowser on Flatpak, since that's bind-mounted
-            # in a way that it is accessible by any other qutebrowser
-            # instances.
-            *parts, app_name = os.path.split(path)
-            assert app_name == APPNAME, app_name
-            flatpak_id = version.flatpak_id()
-            assert flatpak_id is not None
-            path = os.path.join(*parts, 'app', flatpak_id)
-
+        path = _default_runtime()
     _create(path)
     _locations[_Location.runtime] = path
 
 
 def runtime() -> str:
     return _locations[_Location.runtime]
+
+
+def default_runtime() -> str:
+    """Get the runtime location used without a --basedir, and create it."""
+    path = _default_runtime()
+    _create(path)
+    return path
 
 
 def _writable_location(typ: QStandardPaths.StandardLocation) -> str:

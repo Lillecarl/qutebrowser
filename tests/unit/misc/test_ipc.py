@@ -214,6 +214,23 @@ class TestSocketName:
         expected_path = str(fake_runtime_dir / 'qutebrowser' / expected)
         assert socketname == expected_path
 
+    @pytest.mark.posix
+    @pytest.mark.parametrize('basedir, fallback', [
+        ('/long/basedir', True),
+        (None, False),
+    ])
+    def test_too_long(self, monkeypatch, basedir, fallback):
+        """A socket path too long for sun_path uses the default runtime dir."""
+        long_runtime = '/' + 'x' * ipc.SOCKET_PATH_MAX + '/runtime'
+        monkeypatch.setattr(ipc.standarddir, 'runtime', lambda: long_runtime)
+        monkeypatch.setattr(ipc.standarddir, 'default_runtime',
+                            lambda: '/run/user/1000/qutebrowser')
+
+        socketname = ipc._get_socketname(basedir)
+        expected_dir = ('/run/user/1000/qutebrowser' if fallback
+                        else long_runtime)
+        assert os.path.dirname(socketname) == expected_dir
+
     # We can't use the fake_flatpak fixture here, because it conflicts with
     # fake_runtime_dir...
     @pytest.mark.linux
